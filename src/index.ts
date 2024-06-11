@@ -6,16 +6,27 @@ import Sift from "@rbxts/sift";
 
 type Middleware<T> = (oldValue: T[keyof T], newValue: T[keyof T]) => T[keyof T];
 
+interface ExplodedPromise {
+	method: () => Promise<unknown>;
+	resolve: (v: unknown) => void;
+	reject: (e: string) => void;
+}
+
 export class Crate<T extends object> {
 	private state: T;
 	private defaultState: T;
 	private events: Set<RBXScriptConnection>;
 	private updateBind: BindableEvent<(val: T) => void>;
 	private middlewareMethods: Map<string, Middleware<T>>;
-	private queue: Array<Callback>;
+
+	// Queue
+	private queue: Array<ExplodedPromise>;
+	private queueInProgress: boolean;
 
 	constructor(state: T) {
 		this.queue = new Array();
+		this.queueInProgress = false;
+
 		this.middlewareMethods = new Map();
 		this.updateBind = new Instance("BindableEvent", script);
 		this.events = new Set();
@@ -23,21 +34,7 @@ export class Crate<T extends object> {
 		this.defaultState = Sift.Dictionary.copyDeep(state);
 	}
 
-	private executeMiddleware(key: keyof T, oldValue: T[keyof T], newValue: T[keyof T]): T[keyof T] {
-		const MW_EXEC_TIME = tick();
-
-		const Method = this.middlewareMethods.get(key as string);
-		const Result = Method !== undefined ? Method(oldValue, newValue) : newValue;
-
-		if (tick() - MW_EXEC_TIME > 0.2)
-			warn("[Crate] Yeilding is prohibited within middleware to prevent unexpected behavior.");
-
-		return Result;
-	}
-
-	private enqueue(cb: Callback) {
-		this.queue.push(cb);
-	}
+	//// PUBLIC API ////
 
 	/**
 	 * Apply middleware to the crate, mutating keys before final
@@ -52,7 +49,7 @@ export class Crate<T extends object> {
 	}
 
 	async update(data: Partial<Record<keyof T, T[keyof T] | ((old: T[keyof T]) => T[keyof T])>>) {
-		return this.enqueue(() => {
+		return this.enqueue(async () => {
 			for (const [k, v] of Sift.Dictionary.entries(data)) {
 				// Check for mutator function
 				if (typeIs(v, "function")) {
@@ -72,7 +69,7 @@ export class Crate<T extends object> {
 	}
 
 	/**
-	 *
+	 * Bind a callback that is invoked whenever the state changes.
 	 */
 	onUpdate(cb: (data: T) => void) {
 		this.events.add(this.updateBind.Event.Connect(cb));
@@ -95,11 +92,81 @@ export class Crate<T extends object> {
 		}
 	}
 
+	/**
+	 * Reset the state back to the default.
+	 */
 	reset() {
-		this.state = Sift.Dictionary.copyDeep(this.defaultState);
+		this.enqueue(async () => {
+			this.state = Sift.Dictionary.copyDeep(this.defaultState);
+		});
 	}
 
+	/**
+	 * Delete the crate.
+	 */
 	destroy() {
-		print("ZOMG");
+		this.events.forEach((v) => v.Disconnect());
+	}
+
+	//// PRIVATE API ////
+
+	/**
+	 * Execute middleware with tests.
+	 * @param key
+	 * @param oldValue
+	 * @param newValue
+	 * @returns
+	 */
+	private executeMiddleware(key: keyof T, oldValue: T[keyof T], newValue: T[keyof T]): T[keyof T] {
+		const MW_EXEC_TIME = tick();
+
+		const Method = this.middlewareMethods.get(key as string);
+		const Result = Method !== undefined ? Method(oldValue, newValue) : newValue;
+
+		if (tick() - MW_EXEC_TIME > 0.2)
+			warn("[Crate] Yeilding is prohibited within middleware to prevent unexpected behavior.");
+
+		return Result;
+	}
+
+	/**
+	 * Recursive method to step the internal function queue.
+	 * @param recurse
+	 * @returns
+	 */
+	private stepQueue(recurse = false) {
+		if (this.queueInProgress && !recurse) {
+			return;
+		}
+
+		this.queueInProgress = true;
+
+		if (this.queue.size() > 0) {
+			const { method, resolve, reject } = this.queue.shift()!;
+
+			method()
+				.then((result) => resolve(result))
+				.catch((reason) => reject(reason))
+				.finally(() => this.stepQueue(true));
+		} else {
+			this.queueInProgress = false;
+		}
+	}
+
+	/**
+	 * Internal wrapper for enqueuing async functions.
+	 * @param cb
+	 * @returns
+	 */
+	private async enqueue<T>(cb: () => Promise<T>): Promise<T> {
+		return new Promise((res, rej) => {
+			this.queue.push({
+				method: cb,
+				resolve: res as (v: unknown) => void,
+				reject: rej,
+			});
+
+			this.stepQueue();
+		});
 	}
 }
