@@ -7,7 +7,6 @@
 import Sift from "@rbxts/sift";
 
 type Middleware<T> = (oldValue: T[keyof T], newValue: T[keyof T]) => T[keyof T];
-type ValOrMutator<T> = Record<keyof T, T[keyof T] | ((old: T[keyof T]) => T[keyof T])>;
 
 interface ExplodedPromise {
 	method: () => Promise<unknown>;
@@ -72,7 +71,7 @@ export class Crate<T extends object> {
 	 * @param data
 	 * @returns
 	 */
-	async update(data: Partial<ValOrMutator<T>>) {
+	async update(data: Partial<{ [K in keyof T]?: T[K] | ((v: T[K]) => T[K]) }>) {
 		assert(this.enabled, "[Crate] Attempted to update crate state after calling cleanup().");
 
 		return this.enqueue(async () => {
