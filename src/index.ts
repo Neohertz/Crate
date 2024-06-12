@@ -6,7 +6,7 @@
 
 import Sift from "@rbxts/sift";
 
-type Middleware<T> = (oldValue: T[keyof T], newValue: T[keyof T]) => T[keyof T];
+type ValueOrMutator<T> = { [K in keyof T]?: T[K] | ((v: T[K]) => T[K]) };
 
 interface ExplodedPromise {
 	method: () => Promise<unknown>;
@@ -24,7 +24,7 @@ export class Crate<T extends object> {
 	private events: Set<RBXScriptConnection>;
 	private updateBind: BindableEvent<(data: T) => void>;
 	private keyUpdateBind: BindableEvent<(key: keyof T, value: T[keyof T]) => void>;
-	private middlewareMethods: Map<string, Middleware<T>>;
+	private middlewareMethods: Map<string, Callback>;
 	private enabled: boolean;
 
 	// Queue
@@ -56,7 +56,7 @@ export class Crate<T extends object> {
 	 * @param key
 	 * @param middleware
 	 */
-	useMiddleware<K extends keyof T>(key: K, middleware: Middleware<T>) {
+	useMiddleware<K extends keyof T>(key: K, middleware: (oldValue: T[K], newValue: T[K]) => T[K]) {
 		this.middlewareMethods.set(key as string, middleware);
 	}
 
@@ -79,7 +79,7 @@ export class Crate<T extends object> {
 	 * @param data
 	 * @returns
 	 */
-	async update(data: Partial<{ [K in keyof T]?: T[K] | ((v: T[K]) => T[K]) }>) {
+	async update(data: Partial<ValueOrMutator<T>>) {
 		assert(this.enabled, "[Crate] Attempted to update crate state after calling cleanup().");
 
 		return this.enqueue(async () => {
@@ -107,28 +107,27 @@ export class Crate<T extends object> {
 	/**
 	 * Listen for changes on a specific key.
 	 */
-	onUpdate<U extends keyof T>(key: U, callback: (data: T[U]) => void): RBXScriptConnection;
+	onUpdate<U extends keyof T>(key: U, callback: (state: T[U]) => void): RBXScriptConnection;
 	/**
 	 * Listen for changes on the entire crate.
 	 */
-	onUpdate(callback: (data: T) => void): RBXScriptConnection;
+	onUpdate(callback: (state: T) => void): RBXScriptConnection;
 	onUpdate(key: unknown, callback?: unknown): RBXScriptConnection {
-		let call: (data: T[keyof T] | T) => void, event;
+		let event;
 
 		if (callback !== undefined) {
-			call = callback as (data: T[keyof T] | T) => void;
+			const call = callback as (state: T[keyof T] | T) => void;
 			event = this.keyUpdateBind.Event.Connect((k, v) => {
 				if (k === key) {
 					call(v as T[keyof T]);
 				}
 			});
 		} else {
-			call = key as (data: T[keyof T] | T) => void;
-			event = this.updateBind.Event.Connect((data) => call(data));
+			const call = key as (state: T[keyof T] | T) => void;
+			event = this.updateBind.Event.Connect((state) => call(state));
 		}
 
 		this.events.add(event);
-
 		return event;
 	}
 
@@ -165,7 +164,9 @@ export class Crate<T extends object> {
 	 */
 	cleanup() {
 		this.enabled = false;
-		this.events.forEach((v) => v.Disconnect());
+		this.events.forEach((v) => v?.Disconnect());
+		this.updateBind.Destroy();
+		this.keyUpdateBind.Destroy();
 	}
 
 	//// PRIVATE API ////
@@ -180,7 +181,7 @@ export class Crate<T extends object> {
 	private executeMiddleware(key: keyof T, oldValue: T[keyof T], newValue: T[keyof T]): T[keyof T] {
 		const MW_EXEC_TIME = tick();
 
-		const Method = this.middlewareMethods.get(key as string);
+		const Method = this.middlewareMethods.get(key as string) as Callback;
 		const Result = Method !== undefined ? Method(oldValue, newValue) : newValue;
 
 		if (tick() - MW_EXEC_TIME > 0.2)

@@ -1,8 +1,8 @@
 {
 	"name": "@rbxts/crate",
 	"version": "0.0.1",
-	"description": "",
-	"repository": "",
+	"description": "A tiny state manager for roblox-ts.",
+	"repository": "https://github.com/Neohertz/crate",
 	"main": "out/init.lua",
 	"scripts": {
 		"build": "rbxtsc",
