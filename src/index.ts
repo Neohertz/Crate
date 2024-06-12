@@ -14,11 +14,16 @@ interface ExplodedPromise {
 	reject: (e: string) => void;
 }
 
+/**
+ * TODO: Implement a freeze on the base table to avoid outside mutation.
+ */
+
 export class Crate<T extends object> {
 	private state: T;
 	private defaultState: T;
 	private events: Set<RBXScriptConnection>;
-	private updateBind: BindableEvent<(val: T) => void>;
+	private updateBind: BindableEvent<(data: T) => void>;
+	private keyUpdateBind: BindableEvent<(key: keyof T, value: T[keyof T]) => void>;
 	private middlewareMethods: Map<string, Middleware<T>>;
 	private enabled: boolean;
 
@@ -32,7 +37,10 @@ export class Crate<T extends object> {
 		this.queueInProgress = false;
 
 		this.middlewareMethods = new Map();
+
+		this.keyUpdateBind = new Instance("BindableEvent", script);
 		this.updateBind = new Instance("BindableEvent", script);
+
 		this.events = new Set();
 		this.state = state;
 		this.defaultState = Sift.Dictionary.copyDeep(state);
@@ -86,6 +94,9 @@ export class Crate<T extends object> {
 					// HACK: we need to cast data[k] even though it will always be a value
 					data[k] = this.executeMiddleware(k, this.state[k], data[k] as T[keyof T]);
 				}
+
+				// Update for each key.
+				this.keyUpdateBind.Fire(k, data[k] as T[keyof T]);
 			}
 
 			this.state = { ...this.state, ...data };
@@ -94,10 +105,31 @@ export class Crate<T extends object> {
 	}
 
 	/**
-	 * Bind a callback that is invoked whenever the state changes.
+	 * Listen for changes on a specific key.
 	 */
-	onUpdate(cb: (data: T) => void) {
-		this.events.add(this.updateBind.Event.Connect(cb));
+	onUpdate<U extends keyof T>(key: U, callback: (data: T[U]) => void): RBXScriptConnection;
+	/**
+	 * Listen for changes on the entire crate.
+	 */
+	onUpdate(callback: (data: T) => void): RBXScriptConnection;
+	onUpdate(key: unknown, callback?: unknown): RBXScriptConnection {
+		let call: (data: T[keyof T] | T) => void, event;
+
+		if (callback !== undefined) {
+			call = callback as (data: T[keyof T] | T) => void;
+			event = this.keyUpdateBind.Event.Connect((k, v) => {
+				if (k === key) {
+					call(v as T[keyof T]);
+				}
+			});
+		} else {
+			call = key as (data: T[keyof T] | T) => void;
+			event = this.updateBind.Event.Connect((data) => call(data));
+		}
+
+		this.events.add(event);
+
+		return event;
 	}
 
 	/**
