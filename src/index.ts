@@ -1,10 +1,13 @@
-import Sift from "@rbxts/sift";
-
 /**
- * Rewrite of my prior crate package to be more useful.
+ * @rbxts/crate
+ *
+ * The small, yet powerful state manager for roblox-ts.
  */
 
+import Sift from "@rbxts/sift";
+
 type Middleware<T> = (oldValue: T[keyof T], newValue: T[keyof T]) => T[keyof T];
+type ValOrMutator<T> = Record<keyof T, T[keyof T] | ((old: T[keyof T]) => T[keyof T])>;
 
 interface ExplodedPromise {
 	method: () => Promise<unknown>;
@@ -18,12 +21,14 @@ export class Crate<T extends object> {
 	private events: Set<RBXScriptConnection>;
 	private updateBind: BindableEvent<(val: T) => void>;
 	private middlewareMethods: Map<string, Middleware<T>>;
+	private enabled: boolean;
 
 	// Queue
 	private queue: Array<ExplodedPromise>;
 	private queueInProgress: boolean;
 
 	constructor(state: T) {
+		this.enabled = true;
 		this.queue = new Array();
 		this.queueInProgress = false;
 
@@ -48,7 +53,28 @@ export class Crate<T extends object> {
 		this.middlewareMethods.set(key as string, middleware);
 	}
 
-	async update(data: Partial<Record<keyof T, T[keyof T] | ((old: T[keyof T]) => T[keyof T])>>) {
+	/**
+	 * Update the crate state.
+	 *
+	 * All update calls are queued internally.
+	 *
+	 * ```ts
+	 * // set
+	 * crate.update({
+	 * 	coins: 10
+	 * })
+	 * // or increment/mutate
+	 * crate.update({
+	 * 	coins: (v) => v + 10
+	 * })
+	 * ```
+	 *
+	 * @param data
+	 * @returns
+	 */
+	async update(data: Partial<ValOrMutator<T>>) {
+		assert(this.enabled, "[Crate] Attempted to update crate state after calling cleanup().");
+
 		return this.enqueue(async () => {
 			for (const [k, v] of Sift.Dictionary.entries(data)) {
 				// Check for mutator function
@@ -85,6 +111,8 @@ export class Crate<T extends object> {
 	 */
 	get(key: keyof T): T[typeof key];
 	get(key?: keyof T) {
+		assert(this.enabled, "[Crate] Attempted to fetch crate state after calling cleanup().");
+
 		if (key !== undefined) {
 			return this.state[key];
 		} else {
@@ -93,7 +121,7 @@ export class Crate<T extends object> {
 	}
 
 	/**
-	 * Reset the state back to the default.
+	 * Reset the state back to it's initial state.
 	 */
 	reset() {
 		this.enqueue(async () => {
@@ -102,9 +130,10 @@ export class Crate<T extends object> {
 	}
 
 	/**
-	 * Delete the crate.
+	 * Cleanup the crate's internal connections.
 	 */
-	destroy() {
+	cleanup() {
+		this.enabled = false;
 		this.events.forEach((v) => v.Disconnect());
 	}
 
@@ -124,7 +153,7 @@ export class Crate<T extends object> {
 		const Result = Method !== undefined ? Method(oldValue, newValue) : newValue;
 
 		if (tick() - MW_EXEC_TIME > 0.2)
-			warn("[Crate] Yeilding is prohibited within middleware to prevent unexpected behavior.");
+			warn("[Crate] Yielding is prohibited within middleware to prevent unexpected behavior.");
 
 		return Result;
 	}
