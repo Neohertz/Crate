@@ -30,3 +30,10 @@
 ```bash
 npm i @rbxts/crate
 ```
+
+# Updates
+
+## v0.0.3
+- Internal state is fully immutable.
+- `onUpdate()` callback is no longer invoked if the state doesn't truly change.
+- Type fixes.

@@ -14,10 +14,6 @@ interface ExplodedPromise {
 	reject: (e: string) => void;
 }
 
-/**
- * TODO: Implement a freeze on the base table to avoid outside mutation.
- */
-
 export class Crate<T extends object> {
 	private state: T;
 	private events: Set<RBXScriptConnection>;
@@ -32,6 +28,7 @@ export class Crate<T extends object> {
 
 	constructor(state: T) {
 		this.enabled = true;
+
 		this.queue = new Array();
 		this.queueInProgress = false;
 
@@ -81,6 +78,8 @@ export class Crate<T extends object> {
 		assert(this.enabled, "[Crate] Attempted to update crate state after calling cleanup().");
 
 		return this.enqueue(async () => {
+			let changed = false;
+
 			for (const [k, v] of Sift.Dictionary.entries(data)) {
 				// Check for mutator function
 				if (typeIs(v, "function")) {
@@ -97,11 +96,15 @@ export class Crate<T extends object> {
 				if (data[k] === this.state[k]) continue;
 
 				// Update for each key.
+				changed = true;
 				this.keyUpdateBind.Fire(k, data[k] as T[keyof T]);
 			}
 
 			this.state = { ...this.state, ...data };
-			this.updateBind.Fire(this.state);
+
+			if (changed) {
+				this.updateBind.Fire(this.state);
+			}
 		});
 	}
 
@@ -133,11 +136,11 @@ export class Crate<T extends object> {
 	}
 
 	/**
-	 * Get a reference to the datastore object.
+	 * Get a frozen reference to the crate's internal state.
 	 */
 	get(): Readonly<T>;
 	/**
-	 * Get the value of a specific key in the datastore.
+	 * Get the value of a specific key in the crate's state.
 	 * @param key
 	 */
 	get(key: keyof T): T[typeof key];
@@ -153,6 +156,8 @@ export class Crate<T extends object> {
 
 	/**
 	 * Cleanup the crate's internal connections.
+	 *
+	 * Calling this method will cause future `update()` calls to error.
 	 */
 	cleanup() {
 		this.enabled = false;
