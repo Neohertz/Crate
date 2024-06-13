@@ -20,7 +20,6 @@ interface ExplodedPromise {
 
 export class Crate<T extends object> {
 	private state: T;
-	private defaultState: T;
 	private events: Set<RBXScriptConnection>;
 	private updateBind: BindableEvent<(data: T) => void>;
 	private keyUpdateBind: BindableEvent<(key: keyof T, value: T[keyof T]) => void>;
@@ -43,7 +42,6 @@ export class Crate<T extends object> {
 
 		this.events = new Set();
 		this.state = state;
-		this.defaultState = Sift.Dictionary.copyDeep(state);
 	}
 
 	//// PUBLIC API ////
@@ -89,11 +87,14 @@ export class Crate<T extends object> {
 					data[k] = v(this.state[k]);
 				}
 
-				// Check for middleware
 				if (this.middlewareMethods.has(k as string)) {
+					// Check for middleware
 					// HACK: we need to cast data[k] even though it will always be a value
 					data[k] = this.executeMiddleware(k, this.state[k], data[k] as T[keyof T]);
 				}
+
+				// If the data was not changed, don't fire an update.
+				if (data[k] === this.state[k]) continue;
 
 				// Update for each key.
 				this.keyUpdateBind.Fire(k, data[k] as T[keyof T]);
@@ -111,7 +112,7 @@ export class Crate<T extends object> {
 	/**
 	 * Listen for changes on the entire crate.
 	 */
-	onUpdate(callback: (state: T) => void): RBXScriptConnection;
+	onUpdate(callback: (state: Readonly<T>) => void): RBXScriptConnection;
 	onUpdate(key: unknown, callback?: unknown): RBXScriptConnection {
 		let event;
 
@@ -134,7 +135,7 @@ export class Crate<T extends object> {
 	/**
 	 * Get a reference to the datastore object.
 	 */
-	get(): T;
+	get(): Readonly<T>;
 	/**
 	 * Get the value of a specific key in the datastore.
 	 * @param key
@@ -146,17 +147,8 @@ export class Crate<T extends object> {
 		if (key !== undefined) {
 			return this.state[key];
 		} else {
-			return this.state;
+			return table.freeze(Sift.Dictionary.copyDeep(this.state));
 		}
-	}
-
-	/**
-	 * Reset the state back to it's initial state.
-	 */
-	reset() {
-		this.enqueue(async () => {
-			this.state = Sift.Dictionary.copyDeep(this.defaultState);
-		});
 	}
 
 	/**
