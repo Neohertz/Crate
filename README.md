@@ -35,5 +35,6 @@ npm i @rbxts/crate
 
 ## v0.0.3
 - Internal state is fully immutable.
+- Removed `reset()` method.
 - `onUpdate()` callback is no longer invoked if the state doesn't truly change.
 - Type fixes.

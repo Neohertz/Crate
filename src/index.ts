@@ -143,7 +143,7 @@ export class Crate<T extends object> {
 	 * Get the value of a specific key in the crate's state.
 	 * @param key
 	 */
-	get(key: keyof T): T[typeof key];
+	get<K extends keyof T>(key: K): T[K];
 	get(key?: keyof T) {
 		assert(this.enabled, "[Crate] Attempted to fetch crate state after calling cleanup().");
 
