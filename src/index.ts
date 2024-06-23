@@ -56,7 +56,9 @@ export class Crate<T extends object> {
 	}
 
 	/**
-	 * Update the crate state.
+	 * Update the crate state with a partial object.
+	 *
+	 * `update` also takes in a second parameter that, when true, will deep clone the passed object. [See Issue #1](https://github.com/Neohertz/crate/issues/1)
 	 *
 	 * All update calls are queued internally.
 	 *
@@ -71,11 +73,15 @@ export class Crate<T extends object> {
 	 * })
 	 * ```
 	 *
-	 * @param data
+	 * @param data Partial<VorM<T>>
+	 * @param copy boolean
 	 * @returns
 	 */
-	async update(data: Partial<ValueOrMutator<T>>) {
+	async update(data: Partial<ValueOrMutator<T>>, copy = false) {
 		assert(this.enabled, "[Crate] Attempted to update crate state after calling cleanup().");
+
+		// Deep clone the table only if the copy parameter is true.
+		if (copy) data = Sift.Dictionary.copyDeep(data);
 
 		return this.enqueue(async () => {
 			let changed = false;
