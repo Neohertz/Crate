@@ -33,6 +33,13 @@ npm i @rbxts/crate
 
 # Updates
 
+## v0.0.5
+- Added second parameter to copy object passed to `.update()`. [#1](https://github.com/Neohertz/crate/issues/1)
+- Fixed issue with equality check on update. [#3](https://github.com/Neohertz/crate/issues/3)
+
+## v0.0.4
+- Fixed `.get()` type issue with key.
+
 ## v0.0.3
 - Internal state is fully immutable.
 - Removed `reset()` method.
