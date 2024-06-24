@@ -87,9 +87,12 @@ export class Crate<T extends object> {
 			let changed = false;
 
 			for (const [k, v] of Sift.Dictionary.entries(data)) {
+				let isMutator = false;
+
 				// Check for mutator function
 				if (typeIs(v, "function")) {
 					data[k] = v(this.state[k]);
+					isMutator = true;
 				}
 
 				if (this.middlewareMethods.has(k as string)) {
@@ -98,8 +101,8 @@ export class Crate<T extends object> {
 					data[k] = this.executeMiddleware(k, this.state[k], data[k] as T[keyof T]);
 				}
 
-				// If the data was not changed, don't fire an update.
-				if (data[k] === this.state[k]) continue;
+				// Only update on state change or mutator usage.
+				if (data[k] === this.state[k] && !isMutator) continue;
 
 				// Update for each key.
 				changed = true;
