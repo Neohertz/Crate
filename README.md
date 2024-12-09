@@ -1,11 +1,11 @@
-<h1 align="center">
-  <a href="https://github.com/Neohertz/crate"><img src="./docs/images/CLogo.png" alt="Crate"></a>
-</h1>
+<div align="center">
+    <a href="https://github.com/Neohertz/crate"><img src="./docs/images/CLogo.png" alt="Crate"></a>
+</div>
 
 <h4 align="center">
-<b>
-A simple to use, scalable state container built for the <a href="https://roblox-ts.com">roblox-ts</a> ecosystem
-</b>
+    <b>
+        A simple to use, scalable state container built for the <a href="https://roblox-ts.com">roblox-ts</a> ecosystem
+    </b>
 <h4>
 
 <div align="center">
@@ -19,20 +19,12 @@ A simple to use, scalable state container built for the <a href="https://roblox-
 </div>
 
 <p align="center">
-<b>
-  <a href="#installation">Installation</a> •
-  <a href="#credits">Credits</a> •
-  <a href="#changelog">Changelog</a> •
-  <a href="https://docs.neohertz.dev/docs/crate/about">Documentation</a>
-</b>
+    <a href="#installation">Installation</a> •
+    <a href="#installation">Installation</a> •
+    <a href="#credits">Credits</a> •
+    <a href="#changelog">Changelog</a> •
+    <a href="https://docs.neohertz.dev/docs/crate/about">Documentation</a>
 </p>
-
-<!-- <br>
-<p align="center">
-<b>
-<a href="https://docs.neohertz.dev/docs/crate/about">Documentation</a>
-</b>
-</p> -->
 
 # 📛 Notice
 
@@ -60,7 +52,8 @@ This software uses the following:
 
 ### Added or Changed
 
-- `.get()` has been renamed to `.getState()`
+- Rename `.get()` to `.getState()`
+- Reflex style state selectors for `.getState()` and `.onUpdate`
 
 ## v0.0.5
 
