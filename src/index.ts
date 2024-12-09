@@ -164,18 +164,18 @@ export class Crate<T extends object> {
 	/**
 	 * Get a frozen reference to the crate's internal state.
 	 */
-	get(): Readonly<T>;
+	getState(): Readonly<T>;
 	/**
 	 * Get the value of a specific key in the crate's state.
 	 * @param key shallow key within crate
 	 */
-	get<K extends keyof T>(key: K): Readonly<T[K]>;
+	getState<K extends keyof T>(key: K): Readonly<T[K]>;
 	/**
 	 * Retrieve a value via a selector function.
 	 * @param selector `(state: T) => K`
 	 */
-	get<K>(selector: Selector<T, K>): Readonly<K>;
-	get<K>(key?: keyof T | Selector<T, K>) {
+	getState<K>(selector: Selector<T, K>): Readonly<K>;
+	getState<K>(key?: keyof T | Selector<T, K>) {
 		assert(this.enabled, "[Crate] Attempted to fetch crate state after calling cleanup().");
 		let result: unknown;
 
