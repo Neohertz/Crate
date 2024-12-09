@@ -34,7 +34,7 @@ A simple to use, scalable state container built for the <a href="https://roblox-
 </b>
 </p> -->
 
-# Test
+# 📛 Notice
 
 > [!CAUTION]
 > This package is still in **early beta**, expect breaking changes
