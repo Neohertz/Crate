@@ -20,7 +20,6 @@ A simple to use, scalable state container built for the <a href="https://roblox-
 
 <p align="center">
 <b>
-  <a href="#about">About</a> •
   <a href="#installation">Installation</a> •
   <a href="#credits">Credits</a> •
   <a href="#changelog">Changelog</a> •
@@ -34,10 +33,6 @@ A simple to use, scalable state container built for the <a href="https://roblox-
 <a href="https://docs.neohertz.dev/docs/crate/about">Documentation</a>
 </b>
 </p> -->
-
-# 📦 About
-
-`@rbxts/crate` combines simplicity and quality of life with the ability to perform at scale.
 
 > [!CAUTION]
 > This package is still in **early beta**, expect breaking changes
