@@ -4,7 +4,9 @@
  * The small, yet powerful state manager for roblox-ts.
  */
 
+import Signal from "@rbxts/lemon-signal";
 import Sift from "@rbxts/sift";
+import { ReadonlyDeep } from "@rbxts/sift/out/Util";
 
 type ValueOrMutator<T> = { [K in keyof T]?: T[K] | ((v: T[K]) => T[K]) };
 
@@ -29,15 +31,19 @@ type DeepReadonlyObject<T> = {
 	readonly [P in keyof T]: DeepReadonly<T[P]>;
 };
 
-type Selector<T, K> = (state: DeepReadonly<T>) => K;
+type Selector<T, K> = (state: T) => K;
 
 export class Crate<T extends object> {
 	private state: T;
-	private events: Set<RBXScriptConnection>;
-	private updateBind: BindableEvent<(data: T) => void>;
-	private keyUpdateBind: BindableEvent<(key: keyof T, value: T[keyof T]) => void>;
-	private middlewareMethods: Map<string, Callback>;
 	private enabled: boolean;
+
+	// Signals
+	private updateSignal = new Signal<(selectorAdress: string, data: unknown) => void>();
+	private keyUpdateBind = new Signal<(key: keyof T, value: T[keyof T]) => void>();
+
+	private events = new Set<RBXScriptConnection>();
+	private middlewareMethods = new Map<string, Callback>();
+	private updateSelectors = new Set<Selector<T, unknown>>();
 
 	// Queue
 	private queue: Array<ExplodedPromise>;
@@ -47,10 +53,6 @@ export class Crate<T extends object> {
 		this.enabled = true;
 		this.queue = new Array();
 		this.queueInProgress = false;
-		this.middlewareMethods = new Map();
-		this.keyUpdateBind = new Instance("BindableEvent", script);
-		this.updateBind = new Instance("BindableEvent", script);
-		this.events = new Set();
 		this.state = state;
 	}
 
@@ -98,9 +100,10 @@ export class Crate<T extends object> {
 			data = Sift.Dictionary.copyDeep(data);
 		}
 
-		return this.enqueue(async () => {
-			let changed = false;
+		const selectorValues = new Map<Selector<T, unknown>, unknown>();
+		this.updateSelectors.forEach((selector) => selectorValues.set(selector, selector(this.state)));
 
+		return this.enqueue(async () => {
 			for (const [key, value] of Sift.Dictionary.entries(data)) {
 				let isMutator = false;
 
@@ -115,50 +118,56 @@ export class Crate<T extends object> {
 					// HACK: we need to cast data[k] even though it will always be a value
 					data[key] = this.executeMiddleware(key, this.state[key], data[key] as T[keyof T]);
 				}
-
-				// Only update on state change or mutator usage.
-				if (data[key] === this.state[key] && !isMutator) {
-					continue;
-				}
-
-				// Update for each key.
-				changed = true;
-				this.keyUpdateBind.Fire(key, data[key] as T[keyof T]);
 			}
 
 			this.state = { ...this.state, ...data };
 
-			if (changed) {
-				this.updateBind.Fire(this.state);
+			for (const selector of this.updateSelectors) {
+				const fetch = selectorValues.get(selector);
+
+				if (fetch === undefined) {
+					continue;
+				}
+
+				const result = selector(this.state);
+				let hasChanged = false;
+
+				if (Sift.Array.is(result) && Sift.Array.is(fetch)) {
+					hasChanged = !Sift.Array.equals(result, fetch);
+				} else if (typeIs(result, "table") && typeIs(fetch, "table")) {
+					hasChanged = !Sift.Dictionary.equals(result, fetch);
+				} else {
+					hasChanged = result !== fetch;
+				}
+
+				if (hasChanged) {
+					this.updateSignal.Fire(tostring(selector), result);
+				}
 			}
 		});
 	}
 
 	/**
-	 * Listen for changes on a specific key.
-	 */
-	onUpdate<U extends keyof T>(key: U, callback: (state: T[U]) => void): RBXScriptConnection;
-	/**
 	 * Listen for changes on the entire crate.
 	 */
 	onUpdate(callback: (state: Readonly<T>) => void): RBXScriptConnection;
-	onUpdate(key: unknown, callback?: unknown): RBXScriptConnection {
-		let event;
+	onUpdate<K>(selector: Selector<T, K>, callback: (state: ReadonlyDeep<K>) => void): RBXScriptConnection;
+	onUpdate<K>(selectorOrCallback: unknown, possibleCallback?: unknown): RBXScriptConnection {
+		const selector = (possibleCallback === undefined ? (result: T) => result : selectorOrCallback) as Selector<
+			T,
+			K
+		>;
 
-		if (callback !== undefined) {
-			const call = callback as (state: T[keyof T] | T) => void;
-			event = this.keyUpdateBind.Event.Connect((key, value) => {
-				if (key === key) {
-					call(value as T[keyof T]);
-				}
-			});
-		} else {
-			const call = key as (state: T[keyof T] | T) => void;
-			event = this.updateBind.Event.Connect((state) => call(state));
-		}
+		const callback = (possibleCallback ?? selectorOrCallback) as (state: unknown) => void;
 
-		this.events.add(event);
-		return event;
+		this.updateSelectors.add(selector);
+		const connection = this.updateSignal.Connect((sel, val) => {
+			if (sel === tostring(selector)) {
+				callback(val as unknown);
+			}
+		});
+
+		return connection;
 	}
 
 	/**
@@ -180,8 +189,8 @@ export class Crate<T extends object> {
 		let result: unknown;
 
 		if (key !== undefined) {
-			result = typeIs(key, "function") ? key(this.state as DeepReadonly<T>) : this.state[key];
-			return typeIs(result, "table") ? table.freeze(result) : result;
+			result = typeIs(key, "function") ? key(this.state) : this.state[key];
+			return typeIs(result, "table") ? result : result;
 		} else {
 			return table.freeze(Sift.Dictionary.copyDeep(this.state));
 		}
@@ -195,7 +204,7 @@ export class Crate<T extends object> {
 	cleanup() {
 		this.enabled = false;
 		this.events.forEach((event) => event?.Disconnect());
-		this.updateBind.Destroy();
+		this.updateSignal.Destroy();
 		this.keyUpdateBind.Destroy();
 	}
 
