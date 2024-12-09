@@ -10,11 +10,11 @@
 
 <div align="center">
 
+[![Downloads][downloads-shield]][downloads-url]
 [![Contributors][contributors-shield]][contributors-url]
-[![Forks][forks-shield]][forks-url]
 [![Stargazers][stars-shield]][stars-url]
 [![Issues][issues-shield]][issues-url]
-[![Unlicense License][license-shield]][license-url]
+[![License][license-shield]][license-url]
 
 </div>
 
@@ -86,13 +86,13 @@ This software uses the following:
 
 - `reset()` method.
 
-[contributors-shield]: https://img.shields.io/github/contributors/othneildrew/Best-README-Template.svg?style=for-the-badge
+[downloads-shield]: https://img.shields.io/npm/d18m/%40rbxts%2Fcrate?style=for-the-badge
+[downloads-url]: https://www.npmjs.com/package/@rbxts/crate
+[contributors-shield]: https://img.shields.io/github/contributors/neohertz/crate?style=for-the-badge
 [contributors-url]: https://github.com/Neohertz/crate/graphs/contributors
-[forks-shield]: https://img.shields.io/github/forks/othneildrew/Best-README-Template.svg?style=for-the-badge
-[forks-url]: https://github.com/Neohertz/crate/network/members
-[stars-shield]: https://img.shields.io/github/stars/othneildrew/Best-README-Template.svg?style=for-the-badge
+[stars-shield]: https://img.shields.io/github/stars/neohertz/crate?style=for-the-badge
 [stars-url]: https://github.com/Neohertz/crate/stargazers
-[issues-shield]: https://img.shields.io/github/issues/othneildrew/Best-README-Template.svg?style=for-the-badge
+[issues-shield]: https://img.shields.io/github/issues/neohertz/crate?style=for-the-badge
 [issues-url]: https://github.com/Neohertz/crate/issues
-[license-shield]: https://img.shields.io/github/license/othneildrew/Best-README-Template.svg?style=for-the-badge
+[license-shield]: https://img.shields.io/github/license/neohertz/crate?style=for-the-badge
 [license-url]: https://github.com/Neohertz/crate/blob/master/LICENSE
