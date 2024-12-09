@@ -45,15 +45,11 @@ export class Crate<T extends object> {
 
 	constructor(state: T) {
 		this.enabled = true;
-
 		this.queue = new Array();
 		this.queueInProgress = false;
-
 		this.middlewareMethods = new Map();
-
 		this.keyUpdateBind = new Instance("BindableEvent", script);
 		this.updateBind = new Instance("BindableEvent", script);
-
 		this.events = new Set();
 		this.state = state;
 	}
@@ -98,32 +94,36 @@ export class Crate<T extends object> {
 		assert(this.enabled, "[Crate] Attempted to update crate state after calling cleanup().");
 
 		// Deep clone the table only if the copy parameter is true.
-		if (copy) data = Sift.Dictionary.copyDeep(data);
+		if (copy) {
+			data = Sift.Dictionary.copyDeep(data);
+		}
 
 		return this.enqueue(async () => {
 			let changed = false;
 
-			for (const [k, v] of Sift.Dictionary.entries(data)) {
+			for (const [key, value] of Sift.Dictionary.entries(data)) {
 				let isMutator = false;
 
 				// Check for mutator function
-				if (typeIs(v, "function")) {
-					data[k] = v(this.state[k]);
+				if (typeIs(value, "function")) {
+					data[key] = value(this.state[key]);
 					isMutator = true;
 				}
 
-				if (this.middlewareMethods.has(k as string)) {
+				if (this.middlewareMethods.has(key as string)) {
 					// Check for middleware
 					// HACK: we need to cast data[k] even though it will always be a value
-					data[k] = this.executeMiddleware(k, this.state[k], data[k] as T[keyof T]);
+					data[key] = this.executeMiddleware(key, this.state[key], data[key] as T[keyof T]);
 				}
 
 				// Only update on state change or mutator usage.
-				if (data[k] === this.state[k] && !isMutator) continue;
+				if (data[key] === this.state[key] && !isMutator) {
+					continue;
+				}
 
 				// Update for each key.
 				changed = true;
-				this.keyUpdateBind.Fire(k, data[k] as T[keyof T]);
+				this.keyUpdateBind.Fire(key, data[key] as T[keyof T]);
 			}
 
 			this.state = { ...this.state, ...data };
@@ -147,9 +147,9 @@ export class Crate<T extends object> {
 
 		if (callback !== undefined) {
 			const call = callback as (state: T[keyof T] | T) => void;
-			event = this.keyUpdateBind.Event.Connect((k, v) => {
-				if (k === key) {
-					call(v as T[keyof T]);
+			event = this.keyUpdateBind.Event.Connect((key, value) => {
+				if (key === key) {
+					call(value as T[keyof T]);
 				}
 			});
 		} else {
@@ -194,7 +194,7 @@ export class Crate<T extends object> {
 	 */
 	cleanup() {
 		this.enabled = false;
-		this.events.forEach((v) => v?.Disconnect());
+		this.events.forEach((event) => event?.Disconnect());
 		this.updateBind.Destroy();
 		this.keyUpdateBind.Destroy();
 	}
@@ -211,13 +211,14 @@ export class Crate<T extends object> {
 	private executeMiddleware(key: keyof T, oldValue: T[keyof T], newValue: T[keyof T]): T[keyof T] {
 		const MW_EXEC_TIME = tick();
 
-		const Method = this.middlewareMethods.get(key as string) as Callback;
-		const Result = Method !== undefined ? Method(oldValue, newValue) : newValue;
+		const method = this.middlewareMethods.get(key as string) as Callback;
+		const result = method !== undefined ? method(oldValue, newValue) : newValue;
 
-		if (tick() - MW_EXEC_TIME > 0.2)
+		if (tick() - MW_EXEC_TIME > 0.2) {
 			warn("[Crate] Yielding is prohibited within middleware to prevent unexpected behavior.");
+		}
 
-		return Result;
+		return result;
 	}
 
 	/**
