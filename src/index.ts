@@ -14,6 +14,23 @@ interface ExplodedPromise {
 	reject: (e: string) => void;
 }
 
+// Deep Readonly Types
+type DeepReadonly<T> = T extends (infer R)[]
+	? DeepReadonlyArray<R>
+	: T extends Callback
+		? T
+		: T extends object
+			? DeepReadonlyObject<T>
+			: T;
+
+interface DeepReadonlyArray<T> extends ReadonlyArray<DeepReadonly<T>> {}
+
+type DeepReadonlyObject<T> = {
+	readonly [P in keyof T]: DeepReadonly<T[P]>;
+};
+
+type Selector<T, K> = (state: DeepReadonly<T>) => K;
+
 export class Crate<T extends object> {
 	private state: T;
 	private events: Set<RBXScriptConnection>;
@@ -150,14 +167,21 @@ export class Crate<T extends object> {
 	get(): Readonly<T>;
 	/**
 	 * Get the value of a specific key in the crate's state.
-	 * @param key
+	 * @param key shallow key within crate
 	 */
-	get<K extends keyof T>(key: K): T[K];
-	get(key?: keyof T) {
+	get<K extends keyof T>(key: K): Readonly<T[K]>;
+	/**
+	 * Retrieve a value via a selector function.
+	 * @param selector `(state: T) => K`
+	 */
+	get<K>(selector: Selector<T, K>): Readonly<K>;
+	get<K>(key?: keyof T | Selector<T, K>) {
 		assert(this.enabled, "[Crate] Attempted to fetch crate state after calling cleanup().");
+		let result: unknown;
 
 		if (key !== undefined) {
-			return this.state[key];
+			result = typeIs(key, "function") ? key(this.state as DeepReadonly<T>) : this.state[key];
+			return typeIs(result, "table") ? table.freeze(result) : result;
 		} else {
 			return table.freeze(Sift.Dictionary.copyDeep(this.state));
 		}
