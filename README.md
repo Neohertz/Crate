@@ -19,10 +19,10 @@
 </div>
 
 <p align="center">
-    <a href="#installation">Installation</a> •
-    <a href="#installation">Installation</a> •
-    <a href="#credits">Credits</a> •
-    <a href="#changelog">Changelog</a> •
+    <a href="#📛-notice">Notice</a> •
+    <a href="#💻-installation">Installation</a> •
+    <a href="#💡-credits">Credits</a> •
+    <a href="#⚒️-changelog">Changelog</a> •
     <a href="https://docs.neohertz.dev/docs/crate/about">Documentation</a>
 </p>
 
