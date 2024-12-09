@@ -5,10 +5,11 @@
  */
 
 import Signal from "@rbxts/lemon-signal";
-import Sift from "@rbxts/sift";
+import Sift, { Dictionary } from "@rbxts/sift";
 import { ReadonlyDeep } from "@rbxts/sift/out/Util";
 
-type ValueOrMutator<T> = { [K in keyof T]?: T[K] | ((v: T[K]) => T[K]) };
+type ValueOrMutator<T> = { [K in keyof T]?: (T[K] extends object ? ValueOrMutator<T[K]> : T[K]) | ((v: T[K]) => T[K]) };
+type PartialDeep<T> = { [K in keyof T]?: T[K] extends object ? PartialDeep<T[K]> : T[K] };
 
 interface ExplodedPromise {
 	method: () => Promise<unknown>;
@@ -40,7 +41,9 @@ export class Crate<T extends object> {
 	// Signals
 	private updateSignal = new Signal<(selectorAdress: string, data: unknown) => void>();
 	private keyUpdateBind = new Signal<(key: keyof T, value: T[keyof T]) => void>();
+	private diffSignal = new Signal<(diff: PartialDeep<T>) => void>();
 
+	// Maps
 	private events = new Set<RBXScriptConnection>();
 	private middlewareMethods = new Map<string, Callback>();
 	private updateSelectors = new Set<Selector<T, unknown>>();
@@ -66,12 +69,28 @@ export class Crate<T extends object> {
 	 * @param key
 	 * @param middleware
 	 */
-	useMiddleware<K extends keyof T>(key: K, middleware: (oldValue: T[K], newValue: T[K]) => T[K]) {
+	useMiddleware<K extends keyof T>(key: K, middleware: (oldValue: T[K], newValue: T[K]) => T[K]): void {
 		this.middlewareMethods.set(key as string, middleware);
 	}
 
 	/**
-	 * Update the crate state with a partial object.
+	 * Bind a callback that receives the diff from any state updates.
+	 * Very useful for replicating state efficiently to the client. On the client,
+	 * simply call `clientCrate.update()` on the received state to merge it.
+	 *
+	 * ## Important Information
+	 * - Diff generation favors [k, v] pairs. Standard arrays undergo a shallow equality check, and if that check fails the entire array is pushed to the diff.
+	 * - Callback will be invoked **after** the state is updated.
+	 *
+	 * @param executor (diff: PartialDeep<T>) => void
+	 * @returns RBXScriptConnection
+	 */
+	useDiff(executor: (diff: PartialDeep<T>) => void): RBXScriptConnection {
+		return this.diffSignal.Connect(executor);
+	}
+
+	/**
+	 * Update the crate state with a partial object. Under the hood, crate generates a diff that can be consumed with `useDiff()`.
 	 *
 	 * `update` also takes in a second parameter that, when true, will deep clone the passed object. [See Issue #1](https://github.com/Neohertz/crate/issues/1)
 	 *
@@ -92,7 +111,7 @@ export class Crate<T extends object> {
 	 * @param copy boolean
 	 * @returns
 	 */
-	async update(data: Partial<ValueOrMutator<T>>, copy = false) {
+	async update(data: Partial<ValueOrMutator<T>>, copy = false): Promise<void> {
 		assert(this.enabled, "[Crate] Attempted to update crate state after calling cleanup().");
 
 		// Deep clone the table only if the copy parameter is true.
@@ -103,24 +122,84 @@ export class Crate<T extends object> {
 		const selectorValues = new Map<Selector<T, unknown>, unknown>();
 		this.updateSelectors.forEach((selector) => selectorValues.set(selector, selector(this.state)));
 
+		let diff: object = {};
+		let pointer: object;
+
 		return this.enqueue(async () => {
-			for (const [key, value] of Sift.Dictionary.entries(data)) {
-				let isMutator = false;
+			pointer = this.state;
 
-				// Check for mutator function
-				if (typeIs(value, "function")) {
-					data[key] = value(this.state[key]);
-					isMutator = true;
+			/**
+			 * Recursively validate the state and generate the diff.
+			 * @param obj
+			 * @param level
+			 * @returns boolean
+			 */
+			const apply = (obj: Record<string, unknown>, level = 0): boolean => {
+				let changed = false;
+
+				for (const [key, _value] of pairs(obj)) {
+					let value = _value;
+
+					if (typeIs(value, "function")) {
+						// Check for mutator function
+						value = value(pointer[key as never], level + 1);
+					}
+
+					// TODO: implement better middleware.
+					if (level === 0) {
+						if (this.middlewareMethods.has(key as string)) {
+							// Check for middleware
+							value = this.executeMiddleware(key as never, this.state[key as never], value as never);
+						}
+					}
+
+					if (typeIs(value, "table") && !Sift.Array.is(value)) {
+						// handle objects
+
+						const currentPointer = pointer;
+						const previousDiff = diff;
+
+						diff[key as never] = {} as never;
+						diff = diff[key as never];
+						pointer = pointer[key as never] as object;
+
+						const changes = apply(value as Record<string, unknown>);
+
+						if (!changes) {
+							previousDiff[key as never] = undefined as never;
+						} else {
+							changed = true;
+						}
+
+						diff = previousDiff;
+						pointer = currentPointer;
+
+						continue;
+					} else if (typeIs(value, "table")) {
+						// Handle arrays
+						if (!Sift.Array.equals(value, pointer[key as never])) {
+							diff[key as never] = value as never;
+							obj[key] = value;
+							changed = true;
+						}
+					} else if (pointer[key as never] !== obj[key]) {
+						// Handle primitives
+						diff[key as never] = value as never;
+						obj[key] = value;
+						changed = true;
+					}
 				}
 
-				if (this.middlewareMethods.has(key as string)) {
-					// Check for middleware
-					// HACK: we need to cast data[k] even though it will always be a value
-					data[key] = this.executeMiddleware(key, this.state[key], data[key] as T[keyof T]);
-				}
+				return changed;
+			};
+
+			const hasStateChanged = apply(data);
+
+			this.state = { ...this.state, ...diff };
+
+			if (hasStateChanged) {
+				this.diffSignal.Fire(diff);
 			}
-
-			this.state = { ...this.state, ...data };
 
 			for (const selector of this.updateSelectors) {
 				const fetch = selectorValues.get(selector);
@@ -153,7 +232,7 @@ export class Crate<T extends object> {
 	onUpdate(callback: (state: Readonly<T>) => void): RBXScriptConnection;
 	onUpdate<K>(selector: Selector<T, K>, callback: (state: ReadonlyDeep<K>) => void): RBXScriptConnection;
 	onUpdate<K>(selectorOrCallback: unknown, possibleCallback?: unknown): RBXScriptConnection {
-		const selector = (possibleCallback === undefined ? (result: T) => result : selectorOrCallback) as Selector<
+		const selector = (possibleCallback === undefined ? (result: T): T => result : selectorOrCallback) as Selector<
 			T,
 			K
 		>;
@@ -184,7 +263,7 @@ export class Crate<T extends object> {
 	 * @param selector `(state: T) => K`
 	 */
 	getState<K>(selector: Selector<T, K>): Readonly<K>;
-	getState<K>(key?: keyof T | Selector<T, K>) {
+	getState<K>(key?: keyof T | Selector<T, K>): unknown {
 		assert(this.enabled, "[Crate] Attempted to fetch crate state after calling cleanup().");
 		let result: unknown;
 
@@ -201,7 +280,7 @@ export class Crate<T extends object> {
 	 *
 	 * Calling this method will cause future `update()` calls to error.
 	 */
-	cleanup() {
+	cleanup(): void {
 		this.enabled = false;
 		this.events.forEach((event) => event?.Disconnect());
 		this.updateSignal.Destroy();
@@ -235,7 +314,7 @@ export class Crate<T extends object> {
 	 * @param recurse
 	 * @returns
 	 */
-	private stepQueue(recurse = false) {
+	private stepQueue(recurse = false): void {
 		if (this.queueInProgress && !recurse) {
 			return;
 		}
