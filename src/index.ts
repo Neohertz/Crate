@@ -5,35 +5,15 @@
  */
 
 import Signal from "@rbxts/lemon-signal";
-import Sift, { Dictionary } from "@rbxts/sift";
+import Sift from "@rbxts/sift";
 import { ReadonlyDeep } from "@rbxts/sift/out/Util";
+import { DeepReadonly } from "./types/deep-readonly";
+import { ExplodedPromise, PartialDeep, Selector, ValueOrMutator } from "./types/util";
 
-type ValueOrMutator<T> = { [K in keyof T]?: (T[K] extends object ? ValueOrMutator<T[K]> : T[K]) | ((v: T[K]) => T[K]) };
-type PartialDeep<T> = { [K in keyof T]?: T[K] extends object ? PartialDeep<T[K]> : T[K] };
+// Type Export
+export type InferCrateType<T> = T extends Crate<infer K> ? K : never;
 
-interface ExplodedPromise {
-	method: () => Promise<unknown>;
-	resolve: (v: unknown) => void;
-	reject: (e: string) => void;
-}
-
-// Deep Readonly Types
-type DeepReadonly<T> = T extends (infer R)[]
-	? DeepReadonlyArray<R>
-	: T extends Callback
-		? T
-		: T extends object
-			? DeepReadonlyObject<T>
-			: T;
-
-interface DeepReadonlyArray<T> extends ReadonlyArray<DeepReadonly<T>> {}
-
-type DeepReadonlyObject<T> = {
-	readonly [P in keyof T]: DeepReadonly<T[P]>;
-};
-
-type Selector<T, K> = (state: T) => K;
-
+// Crate Export
 export class Crate<T extends object> {
 	private state: T;
 	private enabled: boolean;
@@ -62,7 +42,7 @@ export class Crate<T extends object> {
 	//// PUBLIC API ////
 
 	/**
-	 * Apply middleware to the crate, mutating keys before final
+	 * Apply middleware to the crate that mutates the passed value prior to processing.
 	 * `oldValue` is the value prior to the `set` method.
 	 * `newValue` is the expected value to be set.
 	 *
@@ -96,6 +76,7 @@ export class Crate<T extends object> {
 	 *
 	 * All update calls are queued internally.
 	 *
+	 * @example
 	 * ```ts
 	 * // set
 	 * crate.update({
@@ -262,7 +243,7 @@ export class Crate<T extends object> {
 	 * Retrieve a value via a selector function.
 	 * @param selector `(state: T) => K`
 	 */
-	getState<K>(selector: Selector<T, K>): Readonly<K>;
+	getState<K>(selector: Selector<T, K>): DeepReadonly<K>;
 	getState<K>(key?: keyof T | Selector<T, K>): unknown {
 		assert(this.enabled, "[Crate] Attempted to fetch crate state after calling cleanup().");
 		let result: unknown;
