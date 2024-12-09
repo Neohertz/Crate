@@ -1,8 +1,12 @@
 <h1 align="center">
-  <a href="https://github.com/Neohertz/crate"><img src="./docs/images/CLogo.png" alt="Crate" />
+  <a href="https://github.com/Neohertz/crate"><img src="./docs/images/CLogo.png" alt="Crate"></a>
 </h1>
 
-<br>
+<h4 align="center">
+<b>
+A simple to use, scalable state container built for the <a href="https://roblox-ts.com">roblox-ts</a> ecosystem
+</b>
+<h4>
 
 <div align="center">
 
@@ -14,12 +18,22 @@
 
 </div>
 
-<br>
+<p align="center">
+<b>
+  <a href="#about">About</a> •
+  <a href="#installation">Installation</a> •
+  <a href="#credits">Credits</a> •
+  <a href="#changelog">Changelog</a> •
+  <a href="https://docs.neohertz.dev/docs/crate/about">Documentation</a>
+</b>
+</p>
+
+<!-- <br>
 <p align="center">
 <b>
 <a href="https://docs.neohertz.dev/docs/crate/about">Documentation</a>
 </b>
-</p>
+</p> -->
 
 # 📦 About
 
@@ -28,7 +42,7 @@
 > [!CAUTION]
 > This package is still in **early beta**, expect breaking changes
 
-# 💻 Install
+# 💻 Installation
 
 ```bash
 npm i @rbxts/crate
@@ -38,7 +52,10 @@ pnpm add @rbxts/crate
 
 # 💡 Credits
 
-- [Crate icon](https://www.flaticon.com/free-icons/wooden-box)
+This software uses the following:
+
+- [Icon](https://www.flaticon.com/free-icons/wooden-box)
+- Emojis were taken from [here](https://emojipedia.org/)
 
 # ⚒️ Changelog
 
