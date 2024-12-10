@@ -6,6 +6,7 @@
 
 import Signal from "@rbxts/lemon-signal";
 import Sift from "@rbxts/sift";
+import { entries } from "@rbxts/sift/out/Dictionary";
 import { ReadonlyDeep } from "@rbxts/sift/out/Util";
 
 interface ExplodedPromise {
@@ -31,7 +32,7 @@ export class Crate<T extends object> {
 	private enabled: boolean;
 
 	// Signals
-	private updateSignal = new Signal<(selectorAdress: string, data: unknown) => void>();
+	private updateSignal = new Signal<(selectorAddress: string, data: unknown) => void>();
 	private keyUpdateBind = new Signal<(key: keyof T, value: T[keyof T]) => void>();
 	private diffSignal = new Signal<(diff: CrateDiff<T>) => void>();
 
@@ -48,12 +49,14 @@ export class Crate<T extends object> {
 	 * Create a new crate with a default value.
 	 * @param initialState initial state
 	 */
-	constructor(initialState: T) {
+	public constructor(initialState: T) {
 		this.enabled = true;
 		this.queue = new Array();
 		this.queueInProgress = false;
 		this.state = Sift.Dictionary.copyDeep(initialState);
 	}
+
+	// STATIC METHODS //////////////////////////////////////
 
 	/**
 	 * Reconcile an object with a crate diff. Useful for integrating the state with other state systems like reflex.
@@ -61,11 +64,31 @@ export class Crate<T extends object> {
 	 * @param diff CrateDiff<T>
 	 * @returns T
 	 */
-	public static reconcileDiff<T extends object>(state: T, diff: CrateDiff<T>): T {
-		return Sift.Dictionary.mergeDeep(state, diff) as T;
+	public static reconcileDiff<T extends object>(state: T, diff: PartialDeep<T>): T {
+		const result = Sift.Dictionary.copyDeep(state);
+		let pointer = result;
+
+		const merge = (object: PartialDeep<T>): void => {
+			for (const [key, value] of entries(object)) {
+				if (typeIs(value, "table") && !Sift.Array.is(value)) {
+					const lastPointer = pointer;
+
+					pointer = pointer[key] as never;
+					merge(value);
+					pointer = lastPointer;
+
+					continue;
+				}
+
+				pointer[key] = value as never;
+			}
+		};
+
+		merge(diff);
+		return result;
 	}
 
-	//// PUBLIC API ////
+	// PUBLIC API //////////////////////////////////////
 
 	/**
 	 * Apply middleware to the crate that mutates the passed value prior to processing.
@@ -75,7 +98,7 @@ export class Crate<T extends object> {
 	 * @param key
 	 * @param middleware
 	 */
-	useMiddleware<K extends keyof T>(key: K, middleware: (oldValue: T[K], newValue: T[K]) => T[K]): void {
+	public useMiddleware<K extends keyof T>(key: K, middleware: (oldValue: T[K], newValue: T[K]) => T[K]): void {
 		this.middlewareMethods.set(key as string, middleware);
 	}
 
@@ -91,7 +114,7 @@ export class Crate<T extends object> {
 	 * @param executor (diff: CrateDiff<T>) => void
 	 * @returns RBXScriptConnection
 	 */
-	useDiff(executor: (diff: CrateDiff<T>) => void): RBXScriptConnection {
+	public useDiff(executor: (diff: CrateDiff<T>) => void): RBXScriptConnection {
 		return this.diffSignal.Connect(executor);
 	}
 
@@ -118,7 +141,7 @@ export class Crate<T extends object> {
 	 * @param copy boolean
 	 * @returns
 	 */
-	async update(modifications: Partial<ValueOrMutator<T>>, copy = false): Promise<void> {
+	public async update(modifications: Partial<ValueOrMutator<T>>, copy = false): Promise<void> {
 		assert(this.enabled, "[Crate] Attempted to update crate state after calling cleanup().");
 
 		// Deep clone the table only if the copy parameter is true.
@@ -240,9 +263,9 @@ export class Crate<T extends object> {
 	/**
 	 * Listen for changes on the entire crate.
 	 */
-	onUpdate(callback: (state: Readonly<T>) => void): RBXScriptConnection;
-	onUpdate<K>(selector: Selector<T, K>, callback: (state: ReadonlyDeep<K>) => void): RBXScriptConnection;
-	onUpdate<K>(selectorOrCallback: unknown, possibleCallback?: unknown): RBXScriptConnection {
+	public onUpdate(callback: (state: Readonly<T>) => void): RBXScriptConnection;
+	public onUpdate<K>(selector: Selector<T, K>, callback: (state: ReadonlyDeep<K>) => void): RBXScriptConnection;
+	public onUpdate<K>(selectorOrCallback: unknown, possibleCallback?: unknown): RBXScriptConnection {
 		const selector = (possibleCallback === undefined ? (result: T): T => result : selectorOrCallback) as Selector<
 			T,
 			K
@@ -263,18 +286,18 @@ export class Crate<T extends object> {
 	/**
 	 * Get a frozen reference to the crate's internal state. Calling this without a selector or key will return a **deep copy**.
 	 */
-	getState(): Readonly<T>;
+	public getState(): Readonly<T>;
 	/**
 	 * Get the value of a specific key in the crate's state.
 	 * @param key shallow key within crate
 	 */
-	getState<K extends keyof T>(key: K): Readonly<T[K]>;
+	public getState<K extends keyof T>(key: K): Readonly<T[K]>;
 	/**
 	 * Retrieve a value via a selector function.
 	 * @param selector `(state: T) => K`
 	 */
-	getState<K>(selector: Selector<T, K>): Readonly<K>;
-	getState<K>(key?: keyof T | Selector<T, K>): unknown {
+	public getState<K>(selector: Selector<T, K>): Readonly<K>;
+	public getState<K>(key?: keyof T | Selector<T, K>): unknown {
 		assert(this.enabled, "[Crate] Attempted to fetch crate state after calling cleanup().");
 		let result: unknown;
 
@@ -291,7 +314,7 @@ export class Crate<T extends object> {
 	 *
 	 * Calling this method will cause future `update()` calls to error.
 	 */
-	cleanup(): void {
+	public cleanup(): void {
 		this.enabled = false;
 		this.events.forEach((event) => event?.Disconnect());
 		this.updateSignal.Destroy();
