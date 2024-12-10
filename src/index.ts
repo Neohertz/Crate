@@ -7,11 +7,23 @@
 import Signal from "@rbxts/lemon-signal";
 import Sift from "@rbxts/sift";
 import { ReadonlyDeep } from "@rbxts/sift/out/Util";
-import { DeepReadonly } from "./types/deep-readonly";
-import { ExplodedPromise, PartialDeep, Selector, ValueOrMutator } from "./types/util";
 
-// Type Export
+interface ExplodedPromise {
+	method: () => Promise<unknown>;
+	resolve: (v: unknown) => void;
+	reject: (e: string) => void;
+}
+
+type ValueOrMutator<T> = {
+	[K in keyof T]?: (T[K] extends object ? ValueOrMutator<T[K]> : T[K]) | ((v: T[K]) => T[K]);
+};
+
+type PartialDeep<T> = { [K in keyof T]?: T[K] extends object ? PartialDeep<T[K]> : T[K] };
+type Selector<T, K> = (state: T) => K;
+
+// Exported Types
 export type InferCrateType<T> = T extends Crate<infer K> ? K : never;
+export type CrateDiff<T> = PartialDeep<T>;
 
 // Crate Export
 export class Crate<T extends object> {
@@ -21,7 +33,7 @@ export class Crate<T extends object> {
 	// Signals
 	private updateSignal = new Signal<(selectorAdress: string, data: unknown) => void>();
 	private keyUpdateBind = new Signal<(key: keyof T, value: T[keyof T]) => void>();
-	private diffSignal = new Signal<(diff: PartialDeep<T>) => void>();
+	private diffSignal = new Signal<(diff: CrateDiff<T>) => void>();
 
 	// Maps
 	private events = new Set<RBXScriptConnection>();
@@ -32,11 +44,25 @@ export class Crate<T extends object> {
 	private queue: Array<ExplodedPromise>;
 	private queueInProgress: boolean;
 
-	constructor(state: T) {
+	/**
+	 * Create a new crate with a default value.
+	 * @param initialState initial state
+	 */
+	constructor(initialState: T) {
 		this.enabled = true;
 		this.queue = new Array();
 		this.queueInProgress = false;
-		this.state = state;
+		this.state = Sift.Dictionary.copyDeep(initialState);
+	}
+
+	/**
+	 * Reconcile an object with a crate diff. Useful for integrating the state with other state systems like reflex.
+	 * @param state object<T>
+	 * @param diff CrateDiff<T>
+	 * @returns T
+	 */
+	public static reconcileDiff<T extends object>(state: T, diff: CrateDiff<T>): T {
+		return Sift.Dictionary.mergeDeep(state, diff) as T;
 	}
 
 	//// PUBLIC API ////
@@ -62,10 +88,10 @@ export class Crate<T extends object> {
 	 * - Diff generation favors [k, v] pairs. Standard arrays undergo a shallow equality check, and if that check fails the entire array is pushed to the diff.
 	 * - Callback will be invoked **after** the state is updated.
 	 *
-	 * @param executor (diff: PartialDeep<T>) => void
+	 * @param executor (diff: CrateDiff<T>) => void
 	 * @returns RBXScriptConnection
 	 */
-	useDiff(executor: (diff: PartialDeep<T>) => void): RBXScriptConnection {
+	useDiff(executor: (diff: CrateDiff<T>) => void): RBXScriptConnection {
 		return this.diffSignal.Connect(executor);
 	}
 
@@ -88,26 +114,28 @@ export class Crate<T extends object> {
 	 * })
 	 * ```
 	 *
-	 * @param data Partial<VorM<T>>
+	 * @param modifications Partial<VorM<T>>
 	 * @param copy boolean
 	 * @returns
 	 */
-	async update(data: Partial<ValueOrMutator<T>>, copy = false): Promise<void> {
+	async update(modifications: Partial<ValueOrMutator<T>>, copy = false): Promise<void> {
 		assert(this.enabled, "[Crate] Attempted to update crate state after calling cleanup().");
 
 		// Deep clone the table only if the copy parameter is true.
 		if (copy) {
-			data = Sift.Dictionary.copyDeep(data);
+			modifications = Sift.Dictionary.copyDeep(modifications);
 		}
 
 		const selectorValues = new Map<Selector<T, unknown>, unknown>();
 		this.updateSelectors.forEach((selector) => selectorValues.set(selector, selector(this.state)));
 
 		let diff: object = {};
-		let pointer: object;
+
+		// A pointer that keeps track of our position of the true data when mapping through the passed data.
+		let statePointer: object;
 
 		return this.enqueue(async () => {
-			pointer = this.state;
+			statePointer = this.state;
 
 			/**
 			 * Recursively validate the state and generate the diff.
@@ -123,7 +151,7 @@ export class Crate<T extends object> {
 
 					if (typeIs(value, "function")) {
 						// Check for mutator function
-						value = value(pointer[key as never], level + 1);
+						value = value(statePointer[key as never]);
 					}
 
 					// TODO: implement better middleware.
@@ -134,17 +162,29 @@ export class Crate<T extends object> {
 						}
 					}
 
-					if (typeIs(value, "table") && !Sift.Array.is(value)) {
+					const isStatePointerAnArray = Sift.Array.is(statePointer[key as never]);
+					const isCurrentValueAnArray = Sift.Array.is(value);
+
+					/**
+					 * Due to arrays and tables being of the same type, its hard to classify an empty table in lua.
+					 * Because of this, objects that are empty can be counted as tables, therefore breaking our logic.
+					 * Example: a empty array ({}) to a populated array ({"Apples", "Oranges"}) or vice versa
+					 */
+					const isArrayTransform =
+						(isStatePointerAnArray || isCurrentValueAnArray) &&
+						!(isStatePointerAnArray && isCurrentValueAnArray);
+
+					if (typeIs(value, "table") && !isCurrentValueAnArray && !isArrayTransform) {
 						// handle objects
 
-						const currentPointer = pointer;
+						const currentPointer = statePointer;
 						const previousDiff = diff;
 
 						diff[key as never] = {} as never;
 						diff = diff[key as never];
-						pointer = pointer[key as never] as object;
+						statePointer = statePointer[key as never] as object;
 
-						const changes = apply(value as Record<string, unknown>);
+						const changes = apply(value as Record<string, unknown>, level + 1);
 
 						if (!changes) {
 							previousDiff[key as never] = undefined as never;
@@ -152,21 +192,24 @@ export class Crate<T extends object> {
 							changed = true;
 						}
 
+						statePointer = currentPointer;
 						diff = previousDiff;
-						pointer = currentPointer;
 
 						continue;
 					} else if (typeIs(value, "table")) {
 						// Handle arrays
-						if (!Sift.Array.equals(value, pointer[key as never])) {
+
+						if (!Sift.Array.equals(value, statePointer[key as never])) {
 							diff[key as never] = value as never;
 							obj[key] = value;
+							statePointer[key as never] = value as never;
 							changed = true;
 						}
-					} else if (pointer[key as never] !== obj[key]) {
+					} else if (statePointer[key as never] !== obj[key]) {
 						// Handle primitives
 						diff[key as never] = value as never;
 						obj[key] = value;
+						statePointer[key as never] = value as never;
 						changed = true;
 					}
 				}
@@ -174,9 +217,7 @@ export class Crate<T extends object> {
 				return changed;
 			};
 
-			const hasStateChanged = apply(data);
-
-			this.state = { ...this.state, ...diff };
+			const hasStateChanged = apply(modifications);
 
 			if (hasStateChanged) {
 				this.diffSignal.Fire(diff);
@@ -189,19 +230,8 @@ export class Crate<T extends object> {
 					continue;
 				}
 
-				const result = selector(this.state);
-				let hasChanged = false;
-
-				if (Sift.Array.is(result) && Sift.Array.is(fetch)) {
-					hasChanged = !Sift.Array.equals(result, fetch);
-				} else if (typeIs(result, "table") && typeIs(fetch, "table")) {
-					hasChanged = !Sift.Dictionary.equals(result, fetch);
-				} else {
-					hasChanged = result !== fetch;
-				}
-
-				if (hasChanged) {
-					this.updateSignal.Fire(tostring(selector), result);
+				if (selector(diff as never) !== undefined) {
+					this.updateSignal.Fire(tostring(selector), selector(this.state));
 				}
 			}
 		});
@@ -219,8 +249,8 @@ export class Crate<T extends object> {
 		>;
 
 		const callback = (possibleCallback ?? selectorOrCallback) as (state: unknown) => void;
-
 		this.updateSelectors.add(selector);
+
 		const connection = this.updateSignal.Connect((sel, val) => {
 			if (sel === tostring(selector)) {
 				callback(val as unknown);
@@ -231,7 +261,7 @@ export class Crate<T extends object> {
 	}
 
 	/**
-	 * Get a frozen reference to the crate's internal state.
+	 * Get a frozen reference to the crate's internal state. Calling this without a selector or key will return a **deep copy**.
 	 */
 	getState(): Readonly<T>;
 	/**
@@ -243,7 +273,7 @@ export class Crate<T extends object> {
 	 * Retrieve a value via a selector function.
 	 * @param selector `(state: T) => K`
 	 */
-	getState<K>(selector: Selector<T, K>): DeepReadonly<K>;
+	getState<K>(selector: Selector<T, K>): Readonly<K>;
 	getState<K>(key?: keyof T | Selector<T, K>): unknown {
 		assert(this.enabled, "[Crate] Attempted to fetch crate state after calling cleanup().");
 		let result: unknown;
