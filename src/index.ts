@@ -256,6 +256,12 @@ export class Crate<T extends object> {
 				const [success, result] = pcall(() => selector(diff as never));
 
 				if (success && result !== undefined) {
+					if (typeIs(result, "table")) {
+						if (Sift.Dictionary.equals(result as object, {})) {
+							continue;
+						}
+					}
+
 					this.updateSignal.Fire(tostring(selector), selector(this.state));
 				}
 			}
