@@ -25,6 +25,7 @@
 <p align="center">
     <a href="#-notice">Notice</a> •
     <a href="#-installation">Installation</a> •
+    <a href="#-usage">Example</a> •
     <a href="#-react">React</a> •
     <a href="https://docs.neohertz.dev/docs/crate/about">Documentation</a>
 </p>
@@ -45,6 +46,68 @@ npm i @rbxts/crate
 yarn add @rbxts/crate
 pnpm add @rbxts/crate
 ```
+
+# 💫 Usage
+
+Below is a basic example of using crate to manage player data.
+
+```ts
+import { Crate } from "@rbxts/crate";
+import { Players } from "@rbxts/services";
+
+enum AUTH_LEVEL {
+  USER,
+  ADMIN,
+}
+
+interface User {
+  player: Player;
+  authLevel: AUTH_LEVEL;
+
+  stats: {
+    kills: 0;
+    deaths: 0;
+  };
+}
+
+function getUserAuthLevel(player: Player) {
+  return player.UserId === 1 ? AUTH_LEVEL.ADMIN : AUTH_LEVEL.USER;
+}
+
+function createUserCrate(player: Player): Crate<User> {
+  const user = new Crate<User>({
+    player: player,
+    authLevel: getUserAuthLevel(player),
+
+    stats: {
+      kills: 0,
+      deaths: 0,
+    },
+  });
+
+  return user;
+}
+
+Players.PlayerAdded.Connect((player) => {
+  const user = createUserCrate(player);
+
+  // Listen to kill updates.
+  user.onUpdate(
+    (state) => state.stats.kills,
+    (kills) => print(kills),
+  );
+
+  // Update the user's kills.
+  user.update({
+    stats: {
+      kills: (v) => v + 1,
+    },
+  });
+});
+```
+
+> [!NOTE]
+> To learn more, visit the [docs](https://docs.neohertz.dev/docs/crate/about).
 
 # ⚛️ React
 
