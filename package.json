@@ -1,6 +1,6 @@
 {
 	"name": "@rbxts/crate",
-	"version": "0.0.5",
+	"version": "1.0.1",
 	"description": "A tiny state manager for roblox-ts.",
 	"repository": "https://github.com/Neohertz/crate",
 	"main": "out/init.lua",
@@ -34,6 +34,8 @@
 		"typescript": "^5.4.5"
 	},
 	"dependencies": {
+		"@rbxts/crate": "^1.0.0",
+		"@rbxts/lemon-signal": "^1.2.0",
 		"@rbxts/sift": "^0.0.9"
 	}
 }

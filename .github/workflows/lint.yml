@@ -1,0 +1,30 @@
+name: ESLint
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  eslint-lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Checkout the repository
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # Set up Node.js environment
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20' # Specify the Node.js version (adjust if necessary)
+
+      # Install dependencies
+      - name: Install dependencies
+        run: npm install
+
+      # Run ESLint
+      - name: Run ESLint
+        run: npx eslint src # Adjust the linting target as needed
