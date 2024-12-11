@@ -1,5 +1,5 @@
 <div align="center">
-    <a href="https://github.com/Neohertz/crate"><img width="150" height="150" src="./docs/images/crate-logo.png" alt="Crate"></a>
+    <a href="https://github.com/Neohertz/crate"><img width="150" height="150" src="public/logo.png" alt="Crate"></a>
 	
 </div>
 
