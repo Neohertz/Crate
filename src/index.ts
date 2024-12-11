@@ -253,7 +253,9 @@ export class Crate<T extends object> {
 					continue;
 				}
 
-				if (selector(diff as never) !== undefined) {
+				const [success, result] = pcall(() => selector(diff as never));
+
+				if (success && result !== undefined) {
 					this.updateSignal.Fire(tostring(selector), selector(this.state));
 				}
 			}
