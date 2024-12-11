@@ -228,7 +228,7 @@ export class Crate<T extends object> {
 							statePointer[key as never] = value as never;
 							changed = true;
 						}
-					} else if (statePointer[key as never] !== obj[key]) {
+					} else if (value !== statePointer[key as never]) {
 						// Handle primitives
 						diff[key as never] = value as never;
 						obj[key] = value;
