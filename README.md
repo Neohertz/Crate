@@ -25,7 +25,7 @@
 <p align="center">
     <a href="#-notice">Notice</a> •
     <a href="#-installation">Installation</a> •
-    <a href="#-usage">Example</a> •
+    <a href="#-usage">Usage</a> •
     <a href="#-react">React</a> •
     <a href="https://docs.neohertz.dev/docs/crate/about">Documentation</a>
 </p>
@@ -116,11 +116,6 @@ Players.PlayerAdded.Connect((player) => {
 
 For more information on using crates with react, see [@rbxts/react-crate](https://github.com/Neohertz/react-crate).
 
-# 💡 Credits
-
-This software uses the following:
-
--   Emojis were taken from [here](https://emojipedia.org/)
 
 [downloads-shield]: https://img.shields.io/npm/d18m/%40rbxts%2Fcrate?style=for-the-badge
 [downloads-url]: https://www.npmjs.com/package/@rbxts/crate
