@@ -35,7 +35,7 @@
 # 📛 Notice
 
 > [!CAUTION]
-> This package is still in **early beta**, expect breaking changes
+> While crate appears to be stable, `v1.0.1` has not been thoroughly battle tested. Use at your own risk, as you may encounter breaking bugs.
 
 # 💻 Installation
 
