@@ -65,44 +65,47 @@ interface User {
   authLevel: AUTH_LEVEL;
 
   stats: {
-    kills: 0;
-    deaths: 0;
+    cash: 0;
   };
 }
 
+// Determine a player's auth level.
 function getUserAuthLevel(player: Player) {
   return player.UserId === 1 ? AUTH_LEVEL.ADMIN : AUTH_LEVEL.USER;
 }
 
+// Create and return a crate for the provided user.
 function createUserCrate(player: Player): Crate<User> {
   const user = new Crate<User>({
     player: player,
     authLevel: getUserAuthLevel(player),
 
     stats: {
-      kills: 0,
-      deaths: 0,
+      cash: 0,
     },
   });
 
   return user;
 }
 
+// Listen for player join.
 Players.PlayerAdded.Connect((player) => {
   const user = createUserCrate(player);
 
-  // Listen to kill updates.
+  // Listen to updates to the player's cash.
   user.onUpdate(
-    (state) => state.stats.kills,
-    (kills) => print(kills),
+    (state) => state.stats.cash,
+    (cash) => print(cash),
   );
 
-  // Update the user's kills.
-  user.update({
-    stats: {
-      kills: (v) => v + 1,
-    },
-  });
+  // If the user is an admin, give them a bunch of cash.
+  if (user.getState((s) => s.authLevel) === AUTH_LEVEL.ADMIN) => {
+    user.update({
+      stats: {
+        cash: 1000000,
+      },
+    });
+  })  
 });
 ```
 
