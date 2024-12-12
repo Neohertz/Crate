@@ -16,6 +16,10 @@ interface ExplodedPromise {
 }
 
 type IsObjectStaticallyTyped<T extends object> = string extends keyof T ? true : false;
+
+/**
+ * Transformers
+ */
 type Transformer<T> = (v: T) => T;
 
 /**
@@ -151,16 +155,16 @@ export class Crate<T extends object> {
 	 */
 	public async update(modifications: Partial<ValueOrTransformer<T>>, copy = false): Promise<void> {
 		assert(this.enabled, "[Crate] Attempted to update crate state after calling cleanup().");
+		let updateDiff: object = {};
 
 		// Deep clone the table only if the copy parameter is true.
 		if (copy) {
 			modifications = Sift.Dictionary.copyDeep(modifications);
 		}
 
+		// Collect the previous values of all selectors.
 		const selectorValues = new Map<Selector<T, unknown>, unknown>();
 		this.updateSelectors.forEach((selector) => selectorValues.set(selector, selector(this.state)));
-
-		let diff: object = {};
 
 		// A pointer that keeps track of our position of the true data when mapping through the passed data.
 		let statePointer: object;
@@ -168,11 +172,11 @@ export class Crate<T extends object> {
 		return this.enqueue(async () => {
 			statePointer = this.state;
 
-			// Segment building
+			// Used to build the current path of the object if we need to error.
 			const currentPath = ["STORE"];
 
 			/**
-			 * Recursively validate the state and generate the diff.
+			 * Recursive function to mutate the state and generate an accurate diff.
 			 * @param nestedObject
 			 * @param level
 			 * @returns boolean
@@ -182,14 +186,25 @@ export class Crate<T extends object> {
 				let tableTransformer = false;
 
 				/**
-				 * Handle edge case where both objects are empty.
+				 * Handle edge case where both objects are empty. Due to the nature of lua tables,
+				 * an empty table could be either an array or an object. Our checks below should catch this,
+				 * but in the event of a state update from [] -> [] it could slip through.
+				 *
+				 * This method also will catch attempts to "reset" dynamic data (`Record<K, V>`) with an empty table. Logically,
+				 * this should reset the state, but due to the nature of crate's update method this is simply not the case.
+				 *
+				 * ```ts
+				 * const crate = new Crate({
+				 * 	dynamic: { name: "Neohertz" }
+				 * })
+				 *
+				 * crate.update({ dynamic: {} }) // will not wipe the table, but looks like it should.
+				 * ```
 				 */
 				if (typeIs(nestedObject, "table") && typeIs(statePointer, "table")) {
 					if (Sift.Dictionary.equals({}, nestedObject)) {
 						if (!Sift.Dictionary.equals({}, statePointer)) {
-							error(
-								`[Crate] Improper object assignment! Attempted to update [${currentPath.join(".")}] to an empty object without using a transformer. This will lead to unexpected behavior.`,
-							);
+							throw `[Crate] Improper object assignment! Attempted to update [${currentPath.join(".")}] to an empty object without using a transformer. This will lead to unexpected behavior.`;
 						}
 						return false;
 					}
@@ -198,8 +213,8 @@ export class Crate<T extends object> {
 				for (const [key, _value] of pairs(nestedObject)) {
 					let value = _value;
 
+					// Check for transformer function
 					if (typeIs(value, "function")) {
-						// Check for transformer function
 						value = value(statePointer[key as never]);
 
 						// If a transformer returns a table, always cause an update.
@@ -220,27 +235,27 @@ export class Crate<T extends object> {
 					 * In cases where a Transformer function is invoked and returns an object, we must force a state update.
 					 */
 					if (tableTransformer) {
-						diff[key as never] = value as never;
+						updateDiff[key as never] = value as never;
 						nestedObject[key] = value;
 						statePointer[key as never] = value as never;
 						changed = true;
 						continue;
 					}
 
+					/**
+					 * Handles objects.
+					 */
 					if (
 						typeIs(value, "table") &&
 						!Sift.Array.is(value) &&
 						!this.isArrayTransform(statePointer[key as never], value)
 					) {
-						/**
-						 * Handle updates on tables.
-						 */
 						const currentPointer = statePointer;
-						const previousDiff = diff;
+						const previousDiff = updateDiff;
 						currentPath.push(key);
 
-						diff[key as never] = {} as never;
-						diff = diff[key as never];
+						updateDiff[key as never] = {} as never;
+						updateDiff = updateDiff[key as never];
 						statePointer = statePointer[key as never] as object;
 
 						let changes = false;
@@ -255,20 +270,30 @@ export class Crate<T extends object> {
 
 						currentPath.pop();
 						statePointer = currentPointer;
-						diff = previousDiff;
-
+						updateDiff = previousDiff;
 						continue;
-					} else if (typeIs(value, "table")) {
-						// Handle arrays
+					}
+
+					/**
+					 * Array Handling
+					 */
+					if (typeIs(value, "table")) {
 						if (!Sift.Array.equals(value, statePointer[key as never])) {
-							diff[key as never] = value as never;
+							updateDiff[key as never] = value as never;
 							nestedObject[key] = value;
 							statePointer[key as never] = value as never;
 							changed = true;
 						}
-					} else if (value !== statePointer[key as never]) {
+
+						continue;
+					}
+
+					/**
+					 * Handle Primitives
+					 */
+					if (value !== statePointer[key as never]) {
 						// Handle primitives
-						diff[key as never] = value as never;
+						updateDiff[key as never] = value as never;
 						nestedObject[key] = value;
 						statePointer[key as never] = value as never;
 						changed = true;
@@ -281,19 +306,13 @@ export class Crate<T extends object> {
 			const hasStateChanged = apply(modifications);
 
 			if (hasStateChanged) {
-				this.diffSignal.Fire(diff);
+				this.diffSignal.Fire(updateDiff);
 			} else {
-				return;
+				return; // If nothing changed, don't bother iterating over the selectors.
 			}
 
 			for (const selector of this.updateSelectors) {
-				const fetch = selectorValues.get(selector);
-
-				if (fetch === undefined) {
-					continue;
-				}
-
-				const [success, result] = pcall(() => selector(diff as never));
+				const [success, result] = pcall(() => selector(updateDiff as never));
 
 				if (success && result !== undefined) {
 					this.updateSignal.Fire(tostring(selector), selector(this.state));
