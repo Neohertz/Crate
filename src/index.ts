@@ -16,7 +16,6 @@ interface ExplodedPromise {
 }
 
 type IsObjectStaticallyTyped<T extends object> = string extends keyof T ? true : false;
-
 type Transformer<T> = (v: T) => T;
 
 /**
@@ -169,17 +168,34 @@ export class Crate<T extends object> {
 		return this.enqueue(async () => {
 			statePointer = this.state;
 
+			// Segment building
+			const currentPath = ["STORE"];
+
 			/**
 			 * Recursively validate the state and generate the diff.
-			 * @param obj
+			 * @param nestedObject
 			 * @param level
 			 * @returns boolean
 			 */
-			const apply = (obj: Record<string, unknown>, level = 0): boolean => {
+			const apply = (nestedObject: Record<string, unknown>, level = 0): boolean => {
 				let changed = false;
 				let tableTransformer = false;
 
-				for (const [key, _value] of pairs(obj)) {
+				/**
+				 * Handle edge case where both objects are empty.
+				 */
+				if (typeIs(nestedObject, "table") && typeIs(statePointer, "table")) {
+					if (Sift.Dictionary.equals({}, nestedObject)) {
+						if (!Sift.Dictionary.equals({}, statePointer)) {
+							error(
+								`[Crate] Improper object assignment! Attempted to update [${currentPath.join(".")}] to an empty object without using a transformer. This will lead to unexpected behavior.`,
+							);
+						}
+						return false;
+					}
+				}
+
+				for (const [key, _value] of pairs(nestedObject)) {
 					let value = _value;
 
 					if (typeIs(value, "function")) {
@@ -205,7 +221,7 @@ export class Crate<T extends object> {
 					 */
 					if (tableTransformer) {
 						diff[key as never] = value as never;
-						obj[key] = value;
+						nestedObject[key] = value;
 						statePointer[key as never] = value as never;
 						changed = true;
 						continue;
@@ -221,6 +237,7 @@ export class Crate<T extends object> {
 						 */
 						const currentPointer = statePointer;
 						const previousDiff = diff;
+						currentPath.push(key);
 
 						diff[key as never] = {} as never;
 						diff = diff[key as never];
@@ -236,6 +253,7 @@ export class Crate<T extends object> {
 							changed = true;
 						}
 
+						currentPath.pop();
 						statePointer = currentPointer;
 						diff = previousDiff;
 
@@ -244,14 +262,14 @@ export class Crate<T extends object> {
 						// Handle arrays
 						if (!Sift.Array.equals(value, statePointer[key as never])) {
 							diff[key as never] = value as never;
-							obj[key] = value;
+							nestedObject[key] = value;
 							statePointer[key as never] = value as never;
 							changed = true;
 						}
 					} else if (value !== statePointer[key as never]) {
 						// Handle primitives
 						diff[key as never] = value as never;
-						obj[key] = value;
+						nestedObject[key] = value;
 						statePointer[key as never] = value as never;
 						changed = true;
 					}
