@@ -15,8 +15,17 @@ interface ExplodedPromise {
 	reject: (e: string) => void;
 }
 
-type ValueOrMutator<T> = {
-	[K in keyof T]?: (T[K] extends object ? ValueOrMutator<T[K]> : T[K]) | ((v: T[K]) => T[K]);
+type IsObjectStaticallyTyped<T extends object> = string extends keyof T ? true : false;
+
+type Transformer<T> = (v: T) => T;
+
+/**
+ * Now prevents "partial" state updates to non-static types. Must go through transformer.
+ */
+type ValueOrTransformer<T> = {
+	[K in keyof T]?:
+		| (T[K] extends object ? (IsObjectStaticallyTyped<T[K]> extends true ? never : ValueOrTransformer<T[K]>) : T[K])
+		| Transformer<T[K]>;
 };
 
 type PartialDeep<T> = { [K in keyof T]?: T[K] extends object ? PartialDeep<T[K]> : T[K] };
@@ -141,7 +150,7 @@ export class Crate<T extends object> {
 	 * @param copy boolean
 	 * @returns
 	 */
-	public async update(modifications: Partial<ValueOrMutator<T>>, copy = false): Promise<void> {
+	public async update(modifications: Partial<ValueOrTransformer<T>>, copy = false): Promise<void> {
 		assert(this.enabled, "[Crate] Attempted to update crate state after calling cleanup().");
 
 		// Deep clone the table only if the copy parameter is true.
@@ -168,13 +177,19 @@ export class Crate<T extends object> {
 			 */
 			const apply = (obj: Record<string, unknown>, level = 0): boolean => {
 				let changed = false;
+				let tableTransformer = false;
 
 				for (const [key, _value] of pairs(obj)) {
 					let value = _value;
 
 					if (typeIs(value, "function")) {
-						// Check for mutator function
+						// Check for transformer function
 						value = value(statePointer[key as never]);
+
+						// If a transformer returns a table, always cause an update.
+						if (typeIs(value, "table")) {
+							tableTransformer = true;
+						}
 					}
 
 					// TODO: implement better middleware.
@@ -185,21 +200,25 @@ export class Crate<T extends object> {
 						}
 					}
 
-					const isStatePointerAnArray = Sift.Array.is(statePointer[key as never]);
-					const isCurrentValueAnArray = Sift.Array.is(value);
-
 					/**
-					 * Due to arrays and tables being of the same type, its hard to classify an empty table in lua.
-					 * Because of this, objects that are empty can be counted as tables, therefore breaking our logic.
-					 * Example: a empty array ({}) to a populated array ({"Apples", "Oranges"}) or vice versa
+					 * In cases where a Transformer function is invoked and returns an object, we must force a state update.
 					 */
-					const isArrayTransform =
-						(isStatePointerAnArray || isCurrentValueAnArray) &&
-						!(isStatePointerAnArray && isCurrentValueAnArray);
+					if (tableTransformer) {
+						diff[key as never] = value as never;
+						obj[key] = value;
+						statePointer[key as never] = value as never;
+						changed = true;
+						continue;
+					}
 
-					if (typeIs(value, "table") && !isCurrentValueAnArray && !isArrayTransform) {
-						// handle objects
-
+					if (
+						typeIs(value, "table") &&
+						!Sift.Array.is(value) &&
+						!this.isArrayTransform(statePointer[key as never], value)
+					) {
+						/**
+						 * Handle updates on tables.
+						 */
 						const currentPointer = statePointer;
 						const previousDiff = diff;
 
@@ -207,7 +226,9 @@ export class Crate<T extends object> {
 						diff = diff[key as never];
 						statePointer = statePointer[key as never] as object;
 
-						const changes = apply(value as Record<string, unknown>, level + 1);
+						let changes = false;
+
+						changes = apply(value as Record<string, unknown>, level + 1);
 
 						if (!changes) {
 							previousDiff[key as never] = undefined as never;
@@ -221,7 +242,6 @@ export class Crate<T extends object> {
 						continue;
 					} else if (typeIs(value, "table")) {
 						// Handle arrays
-
 						if (!Sift.Array.equals(value, statePointer[key as never])) {
 							diff[key as never] = value as never;
 							obj[key] = value;
@@ -244,6 +264,8 @@ export class Crate<T extends object> {
 
 			if (hasStateChanged) {
 				this.diffSignal.Fire(diff);
+			} else {
+				return;
 			}
 
 			for (const selector of this.updateSelectors) {
@@ -256,12 +278,6 @@ export class Crate<T extends object> {
 				const [success, result] = pcall(() => selector(diff as never));
 
 				if (success && result !== undefined) {
-					if (typeIs(result, "table")) {
-						if (Sift.Dictionary.equals(result as object, {})) {
-							continue;
-						}
-					}
-
 					this.updateSignal.Fire(tostring(selector), selector(this.state));
 				}
 			}
@@ -330,6 +346,19 @@ export class Crate<T extends object> {
 	}
 
 	//// PRIVATE API ////
+
+	/**
+	 * Due to arrays and tables being of the same type, its hard to classify an empty table in lua.
+	 * Because of this, objects that are empty can be counted as tables, therefore breaking our logic.
+	 * Example: a empty array ({}) to a populated array ({"Apples", "Oranges"}) or vice versa
+	 * @param aValue unknown
+	 * @param bValue unknown
+	 */
+	private isArrayTransform(aValue: unknown, bValue: unknown): boolean {
+		const isArrayA = Sift.Array.is(aValue);
+		const isArrayB = Sift.Array.is(bValue);
+		return (isArrayA || isArrayB) && !(isArrayA && isArrayB);
+	}
 
 	/**
 	 * Execute middleware with tests.
